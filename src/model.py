@@ -12,9 +12,81 @@ import seaborn as sns
 sns.set(style="whitegrid")
 
 
+FEATURE_COLUMNS = [
+    "Pregnancies",
+    "Glucose",
+    "BloodPressure",
+    "SkinThickness",
+    "Insulin",
+    "BMI",
+    "DiabetesPedigreeFunction",
+    "Age",
+    "HbA1c_level",
+    "Hypertension",
+    "HeartDisease",
+    "Gender_Male",
+    "Gender_Female",
+    "SmokingHistoryEncoded",
+]
+
+
 def load_dataset(csv_path: Path) -> pd.DataFrame:
     df = pd.read_csv(csv_path)
     return df
+
+
+def align_dataset(df: pd.DataFrame) -> pd.DataFrame:
+    rename_map = {
+        "age": "Age",
+        "bmi": "BMI",
+        "blood_glucose_level": "Glucose",
+        "diabetes": "Outcome",
+        "gender": "Gender",
+        "hypertension": "Hypertension",
+        "heart_disease": "HeartDisease",
+        "smoking_history": "SmokingHistory",
+        "HbA1c_level": "HbA1c_level",
+    }
+
+    df_aligned = df.rename(columns=rename_map).copy()
+    df_aligned = df_aligned.T.groupby(level=0).first().T
+
+    if "Gender" not in df_aligned.columns:
+        df_aligned["Gender"] = "Unknown"
+    if "SmokingHistory" not in df_aligned.columns:
+        df_aligned["SmokingHistory"] = "No Info"
+    if "Hypertension" not in df_aligned.columns:
+        if "BloodPressure" in df_aligned.columns:
+            df_aligned["Hypertension"] = (df_aligned["BloodPressure"] >= 130).astype(int)
+        else:
+            df_aligned["Hypertension"] = 0
+    if "HeartDisease" not in df_aligned.columns:
+        df_aligned["HeartDisease"] = 0
+    if "HbA1c_level" not in df_aligned.columns:
+        df_aligned["HbA1c_level"] = np.nan
+    if "Pregnancies" not in df_aligned.columns:
+        df_aligned["Pregnancies"] = 0
+    if "BloodPressure" not in df_aligned.columns:
+        df_aligned["BloodPressure"] = np.nan
+    if "SkinThickness" not in df_aligned.columns:
+        df_aligned["SkinThickness"] = np.nan
+    if "Insulin" not in df_aligned.columns:
+        df_aligned["Insulin"] = np.nan
+    if "DiabetesPedigreeFunction" not in df_aligned.columns:
+        df_aligned["DiabetesPedigreeFunction"] = np.nan
+    if "Age" not in df_aligned.columns:
+        df_aligned["Age"] = np.nan
+    if "BMI" not in df_aligned.columns:
+        df_aligned["BMI"] = np.nan
+    if "Glucose" not in df_aligned.columns:
+        df_aligned["Glucose"] = np.nan
+    if "Outcome" not in df_aligned.columns:
+        df_aligned["Outcome"] = np.nan
+
+    df_aligned["Gender"] = df_aligned["Gender"].astype(str).str.strip().str.title()
+    df_aligned["SmokingHistory"] = df_aligned["SmokingHistory"].astype(str).str.strip().str.lower()
+
+    return df_aligned
 
 
 def summarize_dataset(df: pd.DataFrame) -> dict:
@@ -29,16 +101,67 @@ def summarize_dataset(df: pd.DataFrame) -> dict:
 
 
 def clean_dataset(df: pd.DataFrame) -> pd.DataFrame:
-    df_clean = df.copy()
-    columns_with_zero = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
-    df_clean[columns_with_zero] = df_clean[columns_with_zero].replace(0, np.nan)
-    df_clean[columns_with_zero] = df_clean[columns_with_zero].fillna(df_clean[columns_with_zero].median())
+    df_clean = align_dataset(df)
+
+    df_clean["Hypertension"] = df_clean["Hypertension"].fillna(0).astype(int)
+    df_clean["HeartDisease"] = df_clean["HeartDisease"].fillna(0).astype(int)
+
+    zero_fill_cols = ["Glucose", "BloodPressure", "SkinThickness", "Insulin", "BMI"]
+    df_clean[zero_fill_cols] = df_clean[zero_fill_cols].replace(0, np.nan)
+
+    median_cols = [
+        "Pregnancies",
+        "Glucose",
+        "BloodPressure",
+        "SkinThickness",
+        "Insulin",
+        "BMI",
+        "DiabetesPedigreeFunction",
+        "Age",
+        "HbA1c_level",
+    ]
+    df_clean[median_cols] = df_clean[median_cols].fillna(df_clean[median_cols].median())
+
+    df_clean["Gender"] = df_clean["Gender"].where(df_clean["Gender"].isin(["Male", "Female"]), "Unknown")
+    df_clean["SmokingHistory"] = df_clean["SmokingHistory"].replace(
+        {
+            "no info": "no info",
+            "never": "never",
+            "current": "current",
+            "formerly smoked": "formerly smoked",
+            "formerly smoked ": "formerly smoked",
+        }
+    )
+    df_clean["SmokingHistory"] = df_clean["SmokingHistory"].fillna("no info")
+
     return df_clean
 
 
+def encode_features(df: pd.DataFrame) -> pd.DataFrame:
+    df_encoded = df.copy()
+    df_encoded["Gender_Male"] = (df_encoded["Gender"] == "Male").astype(int)
+    df_encoded["Gender_Female"] = (df_encoded["Gender"] == "Female").astype(int)
+
+    smoking_map = {
+        "never": 0,
+        "current": 1,
+        "formerly smoked": 2,
+        "former": 2,
+        "no info": 0,
+        "unknown": 0,
+    }
+    df_encoded["SmokingHistoryEncoded"] = (
+        df_encoded["SmokingHistory"].astype(str).str.strip().map(smoking_map).fillna(0).astype(int)
+    )
+    return df_encoded
+
+
 def preprocess_dataset(df: pd.DataFrame):
-    X = df.drop("Outcome", axis=1)
-    y = df["Outcome"].astype(int)
+    df_clean = clean_dataset(df)
+    df_encoded = encode_features(df_clean)
+
+    X = df_encoded[FEATURE_COLUMNS]
+    y = df_encoded["Outcome"].astype(int)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     return X_scaled, y.values, scaler

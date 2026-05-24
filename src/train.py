@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 root = Path(__file__).resolve().parent.parent
 sys.path.append(str(root))
 
@@ -21,17 +23,27 @@ from src.model import (
 )
 
 
+def load_datasets(dataset_paths):
+    dfs = [load_dataset(path) for path in dataset_paths]
+    if len(dfs) > 1:
+        combined = pd.concat(dfs, ignore_index=True)
+        print(f"Loaded {len(dfs)} dataset(s): {[path.name for path in dataset_paths]}")
+        print(f"Total rows after concat: {combined.shape[0]}")
+        return combined
+    return dfs[0]
+
+
 def main():
     root = Path(__file__).resolve().parent.parent
-    dataset_path_candidates = [root / "data" / "pima_diabetes.csv", root / "data" / "diabetes.csv"]
-    dataset_path = next((path for path in dataset_path_candidates if path.exists()), None)
+    data_dir = root / "data"
+    dataset_paths = sorted(data_dir.glob("*.csv"))
 
-    if dataset_path is None:
+    if not dataset_paths:
         print("Dataset tidak ditemukan.")
-        print("Silakan letakkan file Kaggle Pima Indians Diabetes Dataset sebagai data/pima_diabetes.csv atau data/diabetes.csv")
+        print("Silakan letakkan file CSV dataset di folder data/")
         return
 
-    df = load_dataset(dataset_path)
+    df = load_datasets(dataset_paths)
     summary = summarize_dataset(df)
     cleaned = clean_dataset(df)
     X, y, scaler = preprocess_dataset(cleaned)
